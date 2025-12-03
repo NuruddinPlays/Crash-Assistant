@@ -334,14 +334,16 @@ class SectionPanel {
         }
 
         int max = 0;
-        JLabel ref = new JLabel();
-        FontMetrics fm = ref.getFontMetrics(ref.getFont());
+        JButton dummy = new JButton();
+        dummy.setMargin(new Insets(2, 6, 2, 6));
         for (String s : texts) {
             if (s != null) {
-                max = Math.max(max, fm.stringWidth(s));
+                dummy.setText(s);
+                max = Math.max(max, dummy.getPreferredSize().width);
             }
         }
-        return max + 24;
+        // Add a small safety padding
+        return max + 10;
     }
 
     private int measureLines(FontMetrics fm, List<String> lines) {
@@ -477,6 +479,7 @@ class SectionPanel {
     private class ActionButtonRenderer extends JButton implements TableCellRenderer {
         ActionButtonRenderer() {
             setOpaque(true);
+            setMargin(new Insets(2, 6, 2, 6));
         }
 
         @Override
