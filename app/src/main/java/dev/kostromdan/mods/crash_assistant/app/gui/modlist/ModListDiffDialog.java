@@ -700,13 +700,19 @@ public class ModListDiffDialog extends JDialog {
         // We are single-threaded (mostly), so if the user clicks cancel, they mean "Stop everything now".
         cancelCurrentRequested = true;
 
-        // Pass null to force abort any stream, don't check for target match
-        abortRunningDownload(null);
-        interruptActiveActionThread(null);
-
+        // Update UI immediately so the user gets feedback even if network clean up hangs
         SwingUtilities.invokeLater(() -> {
             progressLabel.setText(LanguageProvider.get("gui.modlist_diff.cancelling_current"));
             refreshTables();
+        });
+
+        // Offload the blocking I/O (closing socket) to a background thread.
+        // If the network is saturated, connection.disconnect() or stream.close() can block for seconds.
+        // Doing this on the EDT freezes the GUI.
+        instantActionExecutor.submit(() -> {
+            // Pass null to force abort any stream
+            abortRunningDownload(null);
+            interruptActiveActionThread(null);
         });
     }
 
@@ -717,13 +723,7 @@ public class ModListDiffDialog extends JDialog {
         cancelCurrentRequested = true;
         cancelTargetEntry = null; // targets whatever is running
 
-        abortRunningDownload(null);
-        interruptActiveActionThread(null);
-
-        actionExecutor.getQueue().clear();
-        resetQueuedRunningStatesAfterCancelAll();
-        markEntryIdle(currentActionEntry);
-
+        // Update UI immediately
         SwingUtilities.invokeLater(() -> {
             cancelCurrentButton.setEnabled(false);
             cancelAllButton.setEnabled(false);
@@ -731,7 +731,19 @@ public class ModListDiffDialog extends JDialog {
             refreshTables();
         });
 
-        clearCancelFlagsIfIdle();
+        // Offload blocking cleanups
+        instantActionExecutor.submit(() -> {
+            abortRunningDownload(null);
+            interruptActiveActionThread(null);
+
+            actionExecutor.getQueue().clear();
+
+            SwingUtilities.invokeLater(() -> {
+                resetQueuedRunningStatesAfterCancelAll();
+                markEntryIdle(currentActionEntry);
+                clearCancelFlagsIfIdle();
+            });
+        });
     }
 
     private boolean isCancelRequestedFor(DiffEntry entry) {
@@ -743,7 +755,7 @@ public class ModListDiffDialog extends JDialog {
     private boolean isCancelInProgressFor(DiffEntry entry) {
         // Used for UI disabling logic
         if (cancelAllRequested) return true;
-        // Шf cancel is requested, we consider it in progress for the active entry
+        // Simplified check: if cancel is requested, we consider it in progress for the active entry
         return cancelCurrentRequested && (currentActionEntry == entry || activeDownloadEntry == entry);
     }
 
@@ -768,6 +780,7 @@ public class ModListDiffDialog extends JDialog {
     private void abortRunningDownload(DiffEntry target) {
         java.io.InputStream stream = activeDownloadStream;
         java.net.HttpURLConnection connection = activeDownloadConnection;
+
 
         // 1. Disconnect the connection to unblock any waiting getInputStream() or connect() calls
         if (connection != null) {
@@ -1339,7 +1352,6 @@ public class ModListDiffDialog extends JDialog {
         // The standard conn.getInputStream() blocks the thread. If it hangs (e.g. handshake),
         // checking flags or calling interrupt() does nothing.
         // We offload the blocking call to a helper thread and poll for cancellation.
-
         java.net.URL url = new java.net.URL(downloadUrl);
         java.net.URLConnection conn = url.openConnection();
         java.net.HttpURLConnection httpConn = conn instanceof java.net.HttpURLConnection ? (java.net.HttpURLConnection) conn : null;
@@ -1744,22 +1756,14 @@ public class ModListDiffDialog extends JDialog {
     }
 
     private Dimension calculateMinSize() {
-        // Base widths for checkbox + icons + actions
-        int nonNameWidthUpdated = 40 /*select*/ + 6 /*padding*/ + 160 /*prev version est*/ + 64 + 64 /*icons*/
-                + 4 * 130; // action buttons
-        int nonNameWidthOther = 40 + 6 + 2 * 64 + 3 * 130;
-
-        String updatedHeader = LanguageProvider.get("gui.modlist_diff.column.file_current");
-        String defaultHeader = LanguageProvider.get("gui.modlist_diff.column.file");
-        int headerWidth = Math.max(measureHeaderWidth(updatedHeader), measureHeaderWidth(defaultHeader));
-        int nameWidth = Math.max(headerWidth, 360);
-        int updatedWidth = nonNameWidthUpdated + nameWidth;
-        int otherWidth = nonNameWidthOther + nameWidth;
-        int maxTableWidth = Math.max(updatedWidth, otherWidth);
+        int maxTableWidth = 0;
+        for (SectionPanel sp : sectionPanels.values()) {
+            maxTableWidth = Math.max(maxTableWidth, sp.getComponent().getPreferredSize().width);
+        }
 
         int scrollbar = 32;
         int padding = 80; // borders/margins
-        int minWidth = Math.max(maxTableWidth + scrollbar + padding, getPreferredSize().width);
+        int minWidth = Math.max(maxTableWidth + scrollbar + padding, 600);
         return new Dimension(minWidth, 0);
     }
 

@@ -277,7 +277,10 @@ class SectionPanel {
         for (int i = startActionCol; i < model.getColumnCount(); i++) {
             ModListDiffDialog.SectionAction action = actionColumns.get(i);
             if (action != null) {
-                cm.getColumn(i).setPreferredWidth(action == ModListDiffDialog.SectionAction.RESTORE ? 110 : 130);
+                int w = measureActionColumnWidth(action, model.getColumnName(i));
+                cm.getColumn(i).setPreferredWidth(w);
+                cm.getColumn(i).setMaxWidth(w);
+                cm.getColumn(i).setMinWidth(w);
                 cm.getColumn(i).setCellRenderer(new ActionButtonRenderer());
                 cm.getColumn(i).setCellEditor(new ActionButtonEditor(this, action));
             }
@@ -302,6 +305,41 @@ class SectionPanel {
         FontMetrics fm = ref.getFontMetrics(ref.getFont());
         for (DiffEntry entry : entries) {
             max = Math.max(max, measureLines(fm, entry.savedDisplayLines()));
+        }
+        return max + 24;
+    }
+
+    private int measureActionColumnWidth(ModListDiffDialog.SectionAction action, String header) {
+        List<String> texts = new ArrayList<String>();
+        texts.add(header);
+
+        switch (action) {
+            case DISABLE:
+                texts.add(dialog.getRowEnableLabel());
+                break;
+            case REMOVE:
+                texts.add(LanguageProvider.get("gui.modlist_diff.section.removed"));
+                break;
+            case REVERT:
+                texts.add(LanguageProvider.get("gui.modlist_diff.actions.reverting"));
+                texts.add(LanguageProvider.get("gui.modlist_diff.actions.reverted"));
+                break;
+            case RESTORE:
+                texts.add(LanguageProvider.get("gui.modlist_diff.actions.restoring"));
+                texts.add(LanguageProvider.get("gui.modlist_diff.actions.restored"));
+                break;
+            case SHOW_FOLDER:
+                texts.add(LanguageProvider.get("gui.show"));
+                break;
+        }
+
+        int max = 0;
+        JLabel ref = new JLabel();
+        FontMetrics fm = ref.getFontMetrics(ref.getFont());
+        for (String s : texts) {
+            if (s != null) {
+                max = Math.max(max, fm.stringWidth(s));
+            }
         }
         return max + 24;
     }
